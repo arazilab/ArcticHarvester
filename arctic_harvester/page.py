@@ -1,3 +1,5 @@
+"""Selenium helpers for the Arctic Shift page."""
+
 from __future__ import annotations
 
 import time
@@ -11,37 +13,51 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 def fill_download_form(
     driver: WebDriver,
-    item_value: str,
+    item_kind: str,
+    item_name: str,
     start_date: str,
     end_date: str,
     download_posts: bool,
     download_comments: bool,
+    step_delay_seconds: float,
 ) -> None:
+    """Fill one Arctic Shift form for a subreddit or user."""
+
     wait = WebDriverWait(driver, 30)
     wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
 
-    name_input = _find_control(driver, ["r/u/", "subreddit", "user"])
-    _replace_value(driver, name_input, item_value)
+    _select_kind(driver, item_kind)
+    _pause(step_delay_seconds)
 
-    # The page can auto-fill the earliest start date after the name is entered.
-    time.sleep(1)
+    name_input = _find_name_input(driver, item_kind)
+    _replace_value(driver, name_input, item_name)
+    _blur(driver, name_input)
+    _pause(step_delay_seconds)
 
     if start_date:
         _replace_value(driver, _find_control(driver, ["start date"]), start_date)
+        _pause(step_delay_seconds)
     if end_date:
         _replace_value(driver, _find_control(driver, ["end date"]), end_date)
+        _pause(step_delay_seconds)
 
-    _set_checkbox(driver, ["download posts"], download_posts)
-    _set_checkbox(driver, ["download comments"], download_comments)
+    _set_checkbox(driver, "download-posts", download_posts)
+    _pause(step_delay_seconds)
+    _set_checkbox(driver, "download-comments", download_comments)
+    _pause(step_delay_seconds)
 
 
 def click_start(driver: WebDriver) -> None:
-    button = _find_button(driver, "start")
+    """Click Start after Arctic Shift enables it."""
+
+    button = _find_enabled_button(driver, "start", timeout_seconds=60)
     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
     button.click()
 
 
 def _replace_value(driver: WebDriver, element: WebElement, value: str) -> None:
+    """Set an input value and notify Svelte listeners."""
+
     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
     element.click()
     element.clear()
@@ -52,15 +68,91 @@ def _replace_value(driver: WebDriver, element: WebElement, value: str) -> None:
     """, element)
 
 
-def _set_checkbox(driver: WebDriver, label_candidates: list[str], desired: bool) -> None:
-    element = _find_control(driver, label_candidates, input_type="checkbox")
-    checked = bool(element.is_selected())
+def _blur(driver: WebDriver, element: WebElement) -> None:
+    driver.execute_script("arguments[0].blur(); document.body.click();", element)
+
+
+def _pause(seconds: float) -> None:
+    if seconds > 0:
+        time.sleep(seconds)
+
+
+def _select_kind(driver: WebDriver, item_kind: str) -> None:
+    text = "r/" if item_kind == "r" else "u/"
+    button = _find_button(driver, text)
+    selected = "selected" in (button.get_attribute("class") or "")
+    if not selected:
+        button.click()
+
+
+def _find_name_input(driver: WebDriver, item_kind: str) -> WebElement:
+    placeholder = "Subreddit name" if item_kind == "r" else "User name"
+    return WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, f'input[placeholder="{placeholder}"]'))
+    )
+
+
+def _set_checkbox(driver: WebDriver, checkbox_id: str, desired: bool) -> None:
+    """Match a checkbox to the configured true or false value."""
+
+    element = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, checkbox_id)))
+    checked = _checkbox_checked(driver, element)
     if checked != desired:
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-        element.click()
+        clicked = bool(
+            driver.execute_script(
+                """
+                const checkbox = arguments[0];
+
+                function visible(node) {
+                  if (!node) return false;
+                  const style = window.getComputedStyle(node);
+                  const box = node.getBoundingClientRect();
+                  return style.visibility !== 'hidden'
+                    && style.display !== 'none'
+                    && box.width > 0
+                    && box.height > 0;
+                }
+
+                const candidates = [
+                  checkbox.closest('label'),
+                  checkbox.id ? document.querySelector(`label[for="${CSS.escape(checkbox.id)}"]`) : null,
+                  checkbox.parentElement,
+                  checkbox.parentElement ? checkbox.parentElement.parentElement : null,
+                  checkbox,
+                ];
+
+                const target = candidates.find(visible);
+                if (!target) return false;
+                target.scrollIntoView({block: 'center'});
+                target.click();
+                return true;
+                """,
+                element,
+            )
+        )
+        if not clicked:
+            raise RuntimeError(f"Could not click checkbox {checkbox_id}")
+
+    checked = _checkbox_checked(driver, element)
+    if checked != desired:
+        raise RuntimeError(f"Could not set checkbox {checkbox_id}")
+
+
+def _checkbox_checked(driver: WebDriver, element: WebElement) -> bool:
+    return bool(
+        driver.execute_script(
+            """
+            const checkbox = arguments[0];
+            return checkbox.checked || checkbox.getAttribute('aria-checked') === 'true';
+            """,
+            element,
+        )
+    )
 
 
 def _find_control(driver: WebDriver, label_candidates: list[str], input_type: str | None = None) -> WebElement:
+    """Find an input by nearby label text."""
+
     script = """
     const labels = arguments[0].map((value) => value.toLowerCase());
     const inputType = arguments[1];
@@ -121,3 +213,22 @@ def _find_button(driver: WebDriver, text: str) -> WebElement:
         return element
     xpath = f"//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{text.lower()}')]"
     return WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, xpath)))
+
+
+def _find_enabled_button(driver: WebDriver, text: str, timeout_seconds: float) -> WebElement:
+    """Wait for a visible button to become enabled."""
+
+    script = """
+    const wanted = arguments[0].toLowerCase();
+    const buttons = [...document.querySelectorAll('button,input[type="button"],input[type="submit"]')];
+    return buttons.find((button) => {
+      const text = (button.innerText || button.value || '').trim().toLowerCase();
+      return (text === wanted || text.includes(wanted)) && !button.disabled;
+    }) || null;
+    """
+
+    def find_enabled(_: WebDriver) -> WebElement | bool:
+        element = driver.execute_script(script, text)
+        return element if element is not None else False
+
+    return WebDriverWait(driver, timeout_seconds).until(find_enabled)

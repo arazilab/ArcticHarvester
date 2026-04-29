@@ -1,3 +1,5 @@
+"""Command line entry point for ArcticHarvester."""
+
 from __future__ import annotations
 
 import argparse
@@ -5,28 +7,46 @@ from dataclasses import dataclass
 from pathlib import Path
 import time
 
+from selenium.webdriver.remote.webdriver import WebDriver
 from tqdm import tqdm
 
 from arctic_harvester.browser import build_driver
 from arctic_harvester.config import HarvesterConfig, load_config
-from arctic_harvester.downloads import wait_for_download
+from arctic_harvester.downloads import wait_for_download_complete
 from arctic_harvester.page import click_start, fill_download_form
 
 
 @dataclass(frozen=True)
 class HarvestItem:
+    """One subreddit or user request from the input files."""
+
     kind: str
     name: str
 
     @property
     def form_value(self) -> str:
+        return f"{self.clean_kind}/{self.clean_name}"
+
+    @property
+    def clean_name(self) -> str:
         clean = self.name.strip()
         if clean.startswith(("r/", "u/")):
-            return clean
-        return f"{self.kind}/{clean}"
+            return clean[2:]
+        return clean
+
+    @property
+    def clean_kind(self) -> str:
+        clean = self.name.strip()
+        if clean.startswith("r/"):
+            return "r"
+        if clean.startswith("u/"):
+            return "u"
+        return self.kind
 
 
 def main() -> None:
+    """Run the command line scraper."""
+
     args = _parse_args()
     config = load_config(args.config)
     items = _load_items(config)
@@ -36,7 +56,7 @@ def main() -> None:
         return
 
     _validate_config(config)
-    _run(config, items)
+    _run_selenium(config, items)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -51,6 +71,8 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _load_items(config: HarvesterConfig) -> list[HarvestItem]:
+    """Read subreddit and user input files."""
+
     items: list[HarvestItem] = []
     items.extend(HarvestItem("r", name) for name in _read_lines(config.subreddits_file))
     items.extend(HarvestItem("u", name) for name in _read_lines(config.users_file))
@@ -58,6 +80,8 @@ def _load_items(config: HarvesterConfig) -> list[HarvestItem]:
 
 
 def _read_lines(path: Path) -> list[str]:
+    """Read non-empty lines, skipping comments."""
+
     if not path.exists():
         return []
     lines = []
@@ -77,40 +101,63 @@ def _validate_config(config: HarvesterConfig) -> None:
         raise ValueError("poll_interval_seconds must be greater than zero")
 
 
-def _run(config: HarvesterConfig, items: list[HarvestItem]) -> None:
+def _run_selenium(config: HarvesterConfig, items: list[HarvestItem]) -> None:
+    """Process all items in a visible browser."""
+
     driver = build_driver(config)
     try:
         driver.get(config.download_tool_url)
+        _pause(config.step_delay_seconds)
         with tqdm(total=len(items), unit="item") as pbar:
-            for item in items:
+            for index, item in enumerate(items):
                 pbar.set_description(f"Downloading {item.form_value}")
-                known_files = set(config.download_dir.glob("*"))
 
                 fill_download_form(
                     driver=driver,
-                    item_value=item.form_value,
+                    item_kind=item.clean_kind,
+                    item_name=item.clean_name,
                     start_date=config.start_date,
                     end_date=config.end_date,
                     download_posts=config.download_posts,
                     download_comments=config.download_comments,
+                    step_delay_seconds=config.step_delay_seconds,
                 )
+                _pause(config.step_delay_seconds)
                 click_start(driver)
 
-                new_files = wait_for_download(
+                wait_for_download_complete(
                     driver=driver,
-                    download_dir=config.download_dir,
-                    known_files=known_files,
                     timeout_seconds=config.download_timeout_seconds,
                     poll_interval_seconds=config.poll_interval_seconds,
                 )
-                pbar.write(f"Downloaded {item.form_value} -> {', '.join(path.name for path in new_files)}")
+                pbar.write(f"Arctic Shift finished {item.form_value}")
+                pbar.update(1)
+                pbar.refresh()
 
                 if config.wait_after_download_seconds:
                     time.sleep(config.wait_after_download_seconds)
-                driver.refresh()
-                pbar.update(1)
+                if index < len(items) - 1:
+                    _open_fresh_page(driver, config.download_tool_url, config.step_delay_seconds)
     finally:
         driver.quit()
+
+
+def _open_fresh_page(driver: WebDriver, url: str, step_delay_seconds: float) -> None:
+    """Open a new Arctic Shift tab and close the old page state."""
+
+    old_handle = driver.current_window_handle
+    driver.switch_to.new_window("tab")
+    new_handle = driver.current_window_handle
+    driver.get(url)
+    driver.switch_to.window(old_handle)
+    driver.close()
+    driver.switch_to.window(new_handle)
+    _pause(step_delay_seconds)
+
+
+def _pause(seconds: float) -> None:
+    if seconds > 0:
+        time.sleep(seconds)
 
 
 if __name__ == "__main__":

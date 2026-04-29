@@ -1,6 +1,6 @@
-from __future__ import annotations
+"""Browser setup for the Selenium scraper."""
 
-from pathlib import Path
+from __future__ import annotations
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
@@ -10,38 +10,24 @@ from arctic_harvester.config import HarvesterConfig
 
 
 def build_driver(config: HarvesterConfig) -> webdriver.Chrome | webdriver.Edge:
-    config.download_dir.mkdir(parents=True, exist_ok=True)
+    """Create a visible Chrome or Edge driver."""
+
     if config.browser == "chrome":
-        options = _chrome_options(config.download_dir, config.headless)
-        return webdriver.Chrome(options=options)
+        return webdriver.Chrome(options=_chrome_options())
     if config.browser == "edge":
-        options = _edge_options(config.download_dir, config.headless)
-        return webdriver.Edge(options=options)
+        return webdriver.Edge(options=_edge_options())
     raise ValueError(f"Unsupported browser {config.browser}")
 
 
-def _download_preferences(download_dir: Path) -> dict[str, object]:
-    return {
-        "download.default_directory": str(download_dir),
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "safebrowsing.enabled": True,
-    }
-
-
-def _chrome_options(download_dir: Path, headless: bool) -> ChromeOptions:
+def _chrome_options() -> ChromeOptions:
     options = ChromeOptions()
-    options.add_experimental_option("prefs", _download_preferences(download_dir))
+    options.add_argument("--disable-popup-blocking")
     options.add_argument("--disable-notifications")
-    if headless:
-        options.add_argument("--headless=new")
     return options
 
 
-def _edge_options(download_dir: Path, headless: bool) -> EdgeOptions:
+def _edge_options() -> EdgeOptions:
     options = EdgeOptions()
-    options.add_experimental_option("prefs", _download_preferences(download_dir))
+    options.add_argument("--disable-popup-blocking")
     options.add_argument("--disable-notifications")
-    if headless:
-        options.add_argument("--headless=new")
     return options

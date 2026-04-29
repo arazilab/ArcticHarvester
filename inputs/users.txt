@@ -1,1 +1,3 @@
-
+# One Reddit username per line.
+# Example
+# spez

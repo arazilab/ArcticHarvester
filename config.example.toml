@@ -10,24 +10,21 @@ download_tool_url = "https://arctic-shift.photon-reddit.com/download-tool"
 
 # Dates use YYYY-MM-DD.
 # Empty start_date keeps the Arctic Shift default earliest date.
-# Empty end_date means today.
+# Empty end_date keeps the Arctic Shift default now value.
 start_date = ""
 end_date = ""
 
 download_posts = true
 download_comments = true
 
-# Where Chrome or Edge should save downloads.
-download_dir = "downloads"
-
-# Wait after each completed download before refreshing the page.
+# Wait after Arctic Shift shows New download.
 wait_after_download_seconds = 5
+
+# Wait between form actions so Arctic Shift can update the page.
+step_delay_seconds = 2
 
 # How long to wait for one item before failing.
 download_timeout_seconds = 1800
 
-# How often to check the page and download folder.
+# How often to check whether the page shows New download.
 poll_interval_seconds = 2
-
-# Keep false if you want to see the browser.
-headless = false

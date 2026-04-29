@@ -1,2 +1,3 @@
-AskReddit
-science
+# One subreddit per line.
+# Example
+# AskReddit

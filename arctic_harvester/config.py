@@ -1,13 +1,16 @@
+"""Config loading for ArcticHarvester."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 import tomllib
 
 
 @dataclass(frozen=True)
 class HarvesterConfig:
+    """Settings loaded from the user TOML file."""
+
     browser: str
     subreddits_file: Path
     users_file: Path
@@ -16,11 +19,10 @@ class HarvesterConfig:
     end_date: str
     download_posts: bool
     download_comments: bool
-    download_dir: Path
     wait_after_download_seconds: float
+    step_delay_seconds: float
     download_timeout_seconds: float
     poll_interval_seconds: float
-    headless: bool
 
 
 def _string_value(value: object) -> str:
@@ -30,6 +32,8 @@ def _string_value(value: object) -> str:
 
 
 def load_config(config_path: Path) -> HarvesterConfig:
+    """Load and validate the scraper config."""
+
     with config_path.open("rb") as handle:
         raw = tomllib.load(handle)
 
@@ -39,7 +43,7 @@ def load_config(config_path: Path) -> HarvesterConfig:
         raise ValueError('browser must be "chrome" or "edge"')
 
     start_date = _string_value(raw.get("start_date", ""))
-    end_date = _string_value(raw.get("end_date", "")) or date.today().isoformat()
+    end_date = _string_value(raw.get("end_date", ""))
 
     return HarvesterConfig(
         browser=browser,
@@ -50,9 +54,8 @@ def load_config(config_path: Path) -> HarvesterConfig:
         end_date=end_date,
         download_posts=bool(raw.get("download_posts", True)),
         download_comments=bool(raw.get("download_comments", True)),
-        download_dir=(base_dir / _string_value(raw.get("download_dir", "downloads"))).resolve(),
         wait_after_download_seconds=float(raw.get("wait_after_download_seconds", 5)),
+        step_delay_seconds=float(raw.get("step_delay_seconds", 2)),
         download_timeout_seconds=float(raw.get("download_timeout_seconds", 1800)),
         poll_interval_seconds=float(raw.get("poll_interval_seconds", 2)),
-        headless=bool(raw.get("headless", False)),
     )
