@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+import time
+
+from selenium.common.exceptions import JavascriptException, TimeoutException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.remote.webdriver import WebDriver, WebElement
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
+
+def fill_download_form(
+    driver: WebDriver,
+    item_value: str,
+    start_date: str,
+    end_date: str,
+    download_posts: bool,
+    download_comments: bool,
+) -> None:
+    wait = WebDriverWait(driver, 30)
+    wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
+    name_input = _find_control(driver, ["r/u/", "subreddit", "user"])
+    _replace_value(driver, name_input, item_value)
+
+    # The page can auto-fill the earliest start date after the name is entered.
+    time.sleep(1)
+
+    if start_date:
+        _replace_value(driver, _find_control(driver, ["start date"]), start_date)
+    if end_date:
+        _replace_value(driver, _find_control(driver, ["end date"]), end_date)
+
+    _set_checkbox(driver, ["download posts"], download_posts)
+    _set_checkbox(driver, ["download comments"], download_comments)
+
+
+def click_start(driver: WebDriver) -> None:
+    button = _find_button(driver, "start")
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
+    button.click()
+
+
+def _replace_value(driver: WebDriver, element: WebElement, value: str) -> None:
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+    element.click()
+    element.clear()
+    element.send_keys(value)
+    driver.execute_script("""
+    arguments[0].dispatchEvent(new Event('input', {bubbles: true}));
+    arguments[0].dispatchEvent(new Event('change', {bubbles: true}));
+    """, element)
+
+
+def _set_checkbox(driver: WebDriver, label_candidates: list[str], desired: bool) -> None:
+    element = _find_control(driver, label_candidates, input_type="checkbox")
+    checked = bool(element.is_selected())
+    if checked != desired:
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+        element.click()
+
+
+def _find_control(driver: WebDriver, label_candidates: list[str], input_type: str | None = None) -> WebElement:
+    script = """
+    const labels = arguments[0].map((value) => value.toLowerCase());
+    const inputType = arguments[1];
+    const controls = [...document.querySelectorAll('input, textarea, select')];
+
+    function textFor(control) {
+      const direct = control.id ? document.querySelector(`label[for="${CSS.escape(control.id)}"]`) : null;
+      const wrapped = control.closest('label');
+      const parent = control.parentElement;
+      const grand = parent ? parent.parentElement : null;
+      return [direct, wrapped, parent, grand]
+        .filter(Boolean)
+        .map((node) => node.innerText || node.textContent || '')
+        .join(' ')
+        .toLowerCase();
+    }
+
+    for (const control of controls) {
+      if (inputType && (control.type || '').toLowerCase() !== inputType) continue;
+      const text = textFor(control);
+      const placeholder = (control.placeholder || '').toLowerCase();
+      const aria = (control.getAttribute('aria-label') || '').toLowerCase();
+      if (labels.some((label) => text.includes(label) || placeholder.includes(label) || aria.includes(label))) {
+        return control;
+      }
+    }
+    return null;
+    """
+    try:
+        element = driver.execute_script(script, label_candidates, input_type)
+    except JavascriptException:
+        element = None
+
+    if element is not None:
+        return element
+
+    fallback = "input"
+    if input_type:
+        fallback = f'input[type="{input_type}"]'
+    try:
+        return WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, fallback)))
+    except TimeoutException as exc:
+        labels = ", ".join(label_candidates)
+        raise RuntimeError(f"Could not find form control for {labels}") from exc
+
+
+def _find_button(driver: WebDriver, text: str) -> WebElement:
+    script = """
+    const wanted = arguments[0].toLowerCase();
+    const buttons = [...document.querySelectorAll('button,input[type="button"],input[type="submit"]')];
+    return buttons.find((button) => {
+      const text = (button.innerText || button.value || '').trim().toLowerCase();
+      return text === wanted || text.includes(wanted);
+    }) || null;
+    """
+    element = driver.execute_script(script, text)
+    if element is not None:
+        return element
+    xpath = f"//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{text.lower()}')]"
+    return WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, xpath)))
