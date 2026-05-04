@@ -23,6 +23,7 @@ class HarvesterConfig:
     step_delay_seconds: float
     download_timeout_seconds: float
     poll_interval_seconds: float
+    max_open_tabs: int
 
 
 def _string_value(value: object) -> str:
@@ -58,4 +59,5 @@ def load_config(config_path: Path) -> HarvesterConfig:
         step_delay_seconds=float(raw.get("step_delay_seconds", 2)),
         download_timeout_seconds=float(raw.get("download_timeout_seconds", 1800)),
         poll_interval_seconds=float(raw.get("poll_interval_seconds", 2)),
+        max_open_tabs=int(raw.get("max_open_tabs", 5)),
     )

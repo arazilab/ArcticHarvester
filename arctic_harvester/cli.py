@@ -44,6 +44,38 @@ class HarvestItem:
         return self.kind
 
 
+@dataclass
+class BrowserTabs:
+    """Track open tabs so old pages can stay alive for recent downloads."""
+
+    driver: WebDriver
+    handles: list[str]
+    max_open_tabs: int
+
+    @classmethod
+    def from_current_tab(cls, driver: WebDriver, max_open_tabs: int) -> BrowserTabs:
+        return cls(
+            driver=driver,
+            handles=[driver.current_window_handle],
+            max_open_tabs=max_open_tabs,
+        )
+
+    def open_fresh_page(self, url: str, step_delay_seconds: float) -> None:
+        self.driver.switch_to.new_window("tab")
+        new_handle = self.driver.current_window_handle
+        self.handles.append(new_handle)
+        self.driver.get(url)
+        self._close_old_tabs()
+        self.driver.switch_to.window(new_handle)
+        _pause(step_delay_seconds)
+
+    def _close_old_tabs(self) -> None:
+        while len(self.handles) > self.max_open_tabs:
+            old_handle = self.handles.pop(0)
+            self.driver.switch_to.window(old_handle)
+            self.driver.close()
+
+
 def main() -> None:
     """Run the command line scraper."""
 
@@ -99,6 +131,8 @@ def _validate_config(config: HarvesterConfig) -> None:
         raise ValueError("wait_after_download_seconds must be zero or greater")
     if config.poll_interval_seconds <= 0:
         raise ValueError("poll_interval_seconds must be greater than zero")
+    if config.max_open_tabs < 1:
+        raise ValueError("max_open_tabs must be one or greater")
 
 
 def _run_selenium(config: HarvesterConfig, items: list[HarvestItem]) -> None:
@@ -108,6 +142,7 @@ def _run_selenium(config: HarvesterConfig, items: list[HarvestItem]) -> None:
     try:
         driver.get(config.download_tool_url)
         _pause(config.step_delay_seconds)
+        tabs = BrowserTabs.from_current_tab(driver, config.max_open_tabs)
         with tqdm(total=len(items), unit="item") as pbar:
             for index, item in enumerate(items):
                 pbar.set_description(f"Downloading {item.form_value}")
@@ -134,25 +169,12 @@ def _run_selenium(config: HarvesterConfig, items: list[HarvestItem]) -> None:
                 pbar.update(1)
                 pbar.refresh()
 
+                if index < len(items) - 1:
+                    tabs.open_fresh_page(config.download_tool_url, config.step_delay_seconds)
                 if config.wait_after_download_seconds:
                     time.sleep(config.wait_after_download_seconds)
-                if index < len(items) - 1:
-                    _open_fresh_page(driver, config.download_tool_url, config.step_delay_seconds)
     finally:
         driver.quit()
-
-
-def _open_fresh_page(driver: WebDriver, url: str, step_delay_seconds: float) -> None:
-    """Open a new Arctic Shift tab and close the old page state."""
-
-    old_handle = driver.current_window_handle
-    driver.switch_to.new_window("tab")
-    new_handle = driver.current_window_handle
-    driver.get(url)
-    driver.switch_to.window(old_handle)
-    driver.close()
-    driver.switch_to.window(new_handle)
-    _pause(step_delay_seconds)
 
 
 def _pause(seconds: float) -> None:

@@ -6,7 +6,7 @@ ArcticHarvester batch downloads Reddit data through the Arctic Shift download to
 
 It uses Selenium to open Chrome or Edge, fill the form, and start each download. Arctic Shift writes files through the browser save picker, so you must approve each save dialog.
 
-After Arctic Shift shows `New download` or `Download complete`, ArcticHarvester updates the progress bar, waits for the configured delay, opens a fresh Arctic Shift tab, closes the old tab, and starts the next item.
+After Arctic Shift shows `New download` or `Download complete`, ArcticHarvester updates the progress bar, opens a fresh Arctic Shift tab, and starts the next item after the configured delay. Old tabs stay open until the configured tab limit is reached.
 
 ## What It Does
 
@@ -22,9 +22,9 @@ After Arctic Shift shows `New download` or `Download complete`, ArcticHarvester 
 
 ## Important Limit
 
-Arctic Shift uses `window.showSaveFilePicker()`. This is a browser security feature. Selenium cannot fully bypass it on macOS.
+Arctic Shift uses `window.showSaveFilePicker()`. This is a browser security feature. Selenium cannot fully bypass it on macOS, Linux, or Windows.
 
-This means the workflow is semi-automatic. You can let the browser work, but you need to approve the save picker for each output file. If both posts and comments are enabled, expect two save dialogs for each subreddit or user.
+This means the workflow is semi-automatic on all supported operating systems. You can let the browser work, but you need to approve the save picker for each output file. If both posts and comments are enabled, expect two save dialogs for each subreddit or user.
 
 ## Requirements
 
@@ -62,6 +62,7 @@ wait_after_download_seconds = 5
 step_delay_seconds = 2
 download_timeout_seconds = 1800
 poll_interval_seconds = 2
+max_open_tabs = 5
 ```
 
 Use `browser = "edge"` for Microsoft Edge.
@@ -73,6 +74,8 @@ Blank `start_date` keeps the earliest date Arctic Shift loads after the name is 
 Blank `end_date` keeps Arctic Shift's default `now` value.
 
 Use `step_delay_seconds` to slow down form actions when Arctic Shift needs more time.
+
+Use `max_open_tabs` to choose how many tabs stay open at once. The default is `5`, which means one active tab and four older inactive tabs. When the next tab would pass that limit, ArcticHarvester closes the oldest tab.
 
 ## Input Files
 

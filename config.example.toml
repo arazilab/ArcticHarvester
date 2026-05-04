@@ -28,3 +28,6 @@ download_timeout_seconds = 1800
 
 # How often to check whether the page shows New download.
 poll_interval_seconds = 2
+
+# Total browser tabs to keep open, including the active tab.
+max_open_tabs = 5
